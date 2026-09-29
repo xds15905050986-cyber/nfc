@@ -39,7 +39,7 @@
 <body>
 
 <div class="card">
-    <h2>NFC 芯片 ID 读取器v1.0.0</h2>
+    <h2>NFC 芯片 ID 读取器</h2>
     <p>点击按钮后，将 NFC 卡片贴近手机背面顶部。</p>
     
     <div class="setting-group">
@@ -84,7 +84,7 @@
     let abortController = null;
     let isScanning = false;
 
-    // 防抖与去重变量（已将间隔调整为1秒）
+    // 防抖与去重变量（间隔调整为1秒）
     let lastUid = '';
     let lastReadTime = 0;
     const DEBOUNCE_TIME = 1000; // 1秒内的相同刷卡事件视为重复触发[cite: 1]
@@ -211,6 +211,10 @@
                 const existingIndex = historyData.findIndex(item => item.uid === uid);
                 
                 if (existingIndex !== -1) {
+                    // 重复读取时触发手机连续震动 3 次
+                    if ("vibrate" in navigator) {
+                        navigator.vibrate([200, 100, 200, 100, 200]);
+                    }
                     resultDiv.innerHTML = `<span class="warning">该卡片已读取过！</span><br><strong>UID:</strong> <code>${uid}</code>`;
                 } else {
                     // 正常读取并写入历史记录[cite: 1]
@@ -232,7 +236,7 @@
             });
 
             ndef.addEventListener("readingerror", () => {
-                // 读卡异常时触发手机连续震动 3 次 (震动200ms，暂停100ms，重复3次)
+                // 读卡异常时触发手机连续震动 3 次
                 if ("vibrate" in navigator) {
                     navigator.vibrate([200, 100, 200, 100, 200]);
                 }
