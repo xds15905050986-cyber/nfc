@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H5 NFC 芯片ID读取器</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 15px; text-align: center; background-color: #f4f4f9; color: #333; margin: 0; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); max-width: 450px; margin: 0 auto; text-align: left; }
+        h2 { text-align: center; margin-top: 0; }
+        p { text-align: center; color: #666; font-size: 14px; }
+        button { padding: 12px; font-size: 15px; background-color: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; margin-top: 10px; }
+        button.secondary { background-color: #6c757d; }
+        button.danger { background-color: #dc3545; }
+        button:active { opacity: 0.8; }
+        #result { margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; word-break: break-all; border: 1px solid #e9ecef; font-size: 14px; }
+        .error { color: #dc3545; }
+        .success { color: #28a745; font-weight: bold; }
+        
+        /* 历史记录样式 */
+        .history-section { margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px; }
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .history-header h3 { margin: 0; font-size: 16px; }
+        .history-actions { display: flex; gap: 5px; }
+        .history-list { max-height: 220px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 6px; background: #fafafa; padding: 5px; }
+        .history-item { padding: 8px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+        .history-item:last-child { border-bottom: none; }
+        .history-info { word-break: break-all; margin-right: 10px; }
+        .copy-sm { padding: 4px 8px; font-size: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; width: auto; margin: 0; }
+        .action-sm { padding: 4px 8px; font-size: 12px; border-radius: 4px; cursor: pointer; width: auto; margin: 0; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>NFC 芯片 ID 读取器</h2>
+    <p>点击按钮后，将 NFC 卡片贴近手机背面顶部。</p>
+    
+    <button id="scanBtn">开始扫描 NFC</button>
+    
+    <div id="result">等待操作...</div>
+
+    <div class="history-section">
+        <div class="history-header">
+            <h3>历史记录 (<span id="count">0</span>)</h3>
+            <div class="history-actions">
+                <button class="secondary action-sm" id="copyAllBtn">复制全部</button>
+                <button class="danger action-sm" id="clearBtn">清空</button>
+            </div>
+        </div>
+        <div class="history-list" id="historyList">
+            <div style="text-align: center; color: #999; padding: 15px; font-size: 13px;">暂无历史记录</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const scanBtn = document.getElementById('scanBtn');
+    const resultDiv = document.getElementById('result');
+    const historyList = document.getElementById('historyList');
+    const countSpan = document.getElementById('count');
+    const clearBtn = document.getElementById('clearBtn');
+    const copyAllBtn = document.getElementById('copyAllBtn');
+
+    // 从 localStorage 读取历史记录，支持刷新留存
+    let historyData = JSON.parse(localStorage.getItem('nfc_history') || '[]');
+
+    function renderHistory() {
+        countSpan.textContent = historyData.length;
+        if (historyData.length === 0) {
+            historyList.innerHTML = '<div style="text-align: center; color: #999; padding: 15px; font-size: 13px;">暂无历史记录</div>';
+            return;
+        }
+        
+        let html = '';
+        historyData.forEach((item) => {
+            html += `
+                <div class="history-item">
+                    <div class="history-info">
+                        <span style="color:#888; font-size:11px;">[${item.time}]</span><br>
+                        <strong>UID:</strong> <code>${item.uid}</code>
+                    </div>
+                    <button class="copy-sm" onclick="copyText('${item.uid}')">复制</button>
+                </div>
+            `;
+        });
+        historyList.innerHTML = html;
+    }
+
+    // 通用复制方法
+    window.copyText = function(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('复制成功！');
+            }).catch(() => {
+                fallbackCopy(text);
+            });
+        } else {
+            fallbackCopy(text);
+        }
+    }
+
+    function fallbackCopy(text) {
+        let textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            alert('复制成功！');
+        } catch (err) {
+            alert('复制失败，请手动长按复制。');
+        }
+        document.body.removeChild(textArea);
+    }
+
+    // 清空按钮
+    clearBtn.addEventListener('click', () => {
+        if (confirm('确定要清空所有历史记录吗？')) {
+            historyData = [];
+            localStorage.removeItem('nfc_history');
+            renderHistory();
+        }
+    });
+
+    // 复制全部按钮
+    copyAllBtn.addEventListener('click', () => {
+        if (historyData.length === 0) {
+            alert('暂无记录可复制');
+            return;
+        }
+        let allText = historyData.map(h => `[${h.time}] UID: ${h.uid}`).join('\\n');
+        copyText(allText);
+    });
+
+    // 初始化渲染
+    renderHistory();
+
+    if (!('NDEFReader' in window)) {
+        resultDiv.innerHTML = '<span class="error">当前浏览器不支持 Web NFC。<br><small>请确保使用安卓端 Chrome 浏览器。</small></span>';
+        scanBtn.disabled = true;
+    }
+
+    scanBtn.addEventListener('click', async () => {
+        resultDiv.innerHTML = "正在初始化，请将 NFC 卡片贴近手机...";
+        
+        try {
+            const ndef = new NDEFReader();
+            await ndef.scan();
+            
+            resultDiv.innerHTML = "已就绪，请刷卡...";
+
+            ndef.addEventListener("reading", ({ serialNumber }) => {
+                const uid = serialNumber || '未提供UID';
+                const now = new Date().toLocaleTimeString();
+                
+                let html = `<span class="success">读取成功！</span><br>`;
+                html += `<strong>芯片 ID (UID):</strong> <code>${uid}</code>`;
+                resultDiv.innerHTML = html;
+
+                // 写入历史记录并保存到本地缓存
+                historyData.unshift({ time: now, uid: uid });
+                if (historyData.length > 50) historyData.pop(); // 最多保存最近 50 条
+                localStorage.setItem('nfc_history', JSON.stringify(historyData));
+                renderHistory();
+            });
+
+            ndef.addEventListener("readingerror", () => {
+                resultDiv.innerHTML = '<span class="error">无法读取该卡片，可能非标准 NDEF 格式或移开太快。</span>';
+            });
+
+        } catch (error) {
+            resultDiv.innerHTML = `<span class="error">启动失败: ${error.message}</span>`;
+        }
+    });
+</script>
+
+</body>
+</html>
