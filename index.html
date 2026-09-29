@@ -14,10 +14,19 @@
         button.danger { background-color: #dc3545; }
         button:active { opacity: 0.8; }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        #result { margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; word-break: break-all; border: 1px solid #e9ecef; font-size: 14px; }
+        #result { margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; word-break: break-all; border: 1px solid #e9ecef; font-size: 14px; transition: all 0.2s ease; }
         .error { color: #dc3545; }
         .success { color: #28a745; font-weight: bold; }
         .warning { color: #e6a23c; font-weight: bold; }
+        
+        /* 冷却提示专用样式 */
+        .cooldown-alert {
+            background-color: #fff3cd !important;
+            border-color: #ffeeba !important;
+            color: #856404;
+            font-weight: bold;
+            font-size: 15px;
+        }
         
         .setting-group { margin: 15px 0; text-align: left; }
         .setting-group label { font-size: 14px; color: #555; display: block; margin-bottom: 5px; }
@@ -39,7 +48,7 @@
 <body>
 
 <div class="card">
-    <h2>NFC 芯片 ID 读取器V1.0.1</h2>
+    <h2>NFC 芯片 ID 读取器V1.0.2</h2>
     <p>点击按钮后，将 NFC 卡片贴近手机背面顶部。</p>
     
     <div class="setting-group">
@@ -84,10 +93,37 @@
     let abortController = null;
     let isScanning = false;
 
-    // 防抖与去重变量（间隔调整为1秒）
+    // 扫码间隔（防抖时间）设置为 2 秒
     let lastUid = '';
     let lastReadTime = 0;
-    const DEBOUNCE_TIME = 1000; // 1秒内的相同刷卡事件视为重复触发[cite: 1]
+    const DEBOUNCE_TIME = 2000; 
+    let countdownTimer = null; // 倒计时定时器
+
+    // 启动冷却倒计时函数（精确到小数点后1位）
+    function startCooldown(durationMs) {
+        if (countdownTimer) {
+            clearInterval(countdownTimer);
+        }
+        
+        let remaining = durationMs;
+        resultDiv.className = "cooldown-alert";
+        
+        let sec = (remaining / 1000).toFixed(1);
+        resultDiv.innerHTML = `⏳ <strong>冷却中（请稍候）</strong><br>剩余冷却时间：<strong>${sec}</strong> 秒`;
+
+        countdownTimer = setInterval(() => {
+            remaining -= 100; // 每100毫秒更新一次
+            if (remaining <= 0) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+                resultDiv.className = "";
+                resultDiv.innerHTML = "已就绪，请刷卡...";
+            } else {
+                let s = (remaining / 1000).toFixed(1);
+                resultDiv.innerHTML = `⏳ <strong>冷却中（请稍候）</strong><br>剩余冷却时间：<strong>${s}</strong> 秒`;
+            }
+        }, 100);
+    }
 
     function renderHistory() {
         countSpan.textContent = historyData.length;
@@ -170,6 +206,10 @@
             abortController.abort();
             abortController = null;
         }
+        if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+        }
         isScanning = false;
         scanBtn.style.display = 'block';
         stopBtn.style.display = 'none';
@@ -179,6 +219,7 @@
     scanBtn.addEventListener('click', async () => {
         if (isScanning) return;
 
+        resultDiv.className = "";
         resultDiv.innerHTML = "正在初始化，请将 NFC 卡片贴近手机...";
         
         try {
@@ -199,25 +240,31 @@
                 const now = new Date().toLocaleTimeString();
                 const nowTimestamp = Date.now();
                 const mode = readModeSelect.value;
+                const timeSinceLastRead = nowTimestamp - lastReadTime;
 
-                // 防抖检查：防止短时间内同张卡触发多次
-                if (uid === lastUid && (nowTimestamp - lastReadTime < DEBOUNCE_TIME)) {
+                // 2 秒防抖/冷却检查
+                if (timeSinceLastRead < DEBOUNCE_TIME) {
+                    if ("vibrate" in navigator) {
+                        navigator.vibrate([200, 100, 200, 100, 200]);
+                    }
+                    // 刷新倒计时
+                    startCooldown(DEBOUNCE_TIME - timeSinceLastRead);
                     return; 
                 }
+
                 lastUid = uid;
                 lastReadTime = nowTimestamp;
+                resultDiv.className = "";
 
-                // 检查卡片是否已经读取过（存在于历史中）
+                // 检查卡片是否已经读取过
                 const existingIndex = historyData.findIndex(item => item.uid === uid);
                 
                 if (existingIndex !== -1) {
-                    // 重复读取时触发手机连续震动 3 次
                     if ("vibrate" in navigator) {
                         navigator.vibrate([200, 100, 200, 100, 200]);
                     }
                     resultDiv.innerHTML = `<span class="warning">该卡片已读取过！</span><br><strong>UID:</strong> <code>${uid}</code>`;
                 } else {
-                    // 正常读取并写入历史记录[cite: 1]
                     let html = `<span class="success">读取成功！</span><br>`;
                     html += `<strong>芯片 ID (UID):</strong> <code>${uid}</code>`;
                     resultDiv.innerHTML = html;
@@ -228,6 +275,9 @@
                     renderHistory();
                 }
 
+                // 每次正常或重复读卡后，自动启动 2 秒冷却倒计时
+                startCooldown(DEBOUNCE_TIME);
+
                 // 如果是单次读卡模式，处理完毕后自动停止扫描
                 if (mode === 'single') {
                     stopScanning();
@@ -236,10 +286,10 @@
             });
 
             ndef.addEventListener("readingerror", () => {
-                // 读卡异常时触发手机连续震动 3 次
                 if ("vibrate" in navigator) {
                     navigator.vibrate([200, 100, 200, 100, 200]);
                 }
+                resultDiv.className = "";
                 resultDiv.innerHTML = '<span class="error">无法读取该卡片，可能非标准 NDEF 格式或移开太快。</span>';
             });
 
@@ -248,12 +298,14 @@
             scanBtn.style.display = 'block';
             stopBtn.style.display = 'none';
             readModeSelect.disabled = false;
+            resultDiv.className = "";
             resultDiv.innerHTML = `<span class="error">启动失败: ${error.message}</span>`;
         }
     });
 
     stopBtn.addEventListener('click', () => {
         stopScanning();
+        resultDiv.className = "";
         resultDiv.innerHTML = "已手动停止扫描。";
     });
 </script>
