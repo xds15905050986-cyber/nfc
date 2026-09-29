@@ -84,10 +84,10 @@
     let abortController = null;
     let isScanning = false;
 
-    // 防抖与去重变量（解决贴一次卡触发多次的问题）
+    // 防抖与去重变量（已将间隔调整为1秒）
     let lastUid = '';
     let lastReadTime = 0;
-    const DEBOUNCE_TIME = 1500; // 1.5秒内的相同刷卡事件视为重复触发
+    const DEBOUNCE_TIME = 1000; // 1秒内的相同刷卡事件视为重复触发[cite: 1]
 
     function renderHistory() {
         countSpan.textContent = historyData.length;
@@ -232,6 +232,10 @@
             });
 
             ndef.addEventListener("readingerror", () => {
+                // 读卡异常时触发手机连续震动 3 次 (震动200ms，暂停100ms，重复3次)
+                if ("vibrate" in navigator) {
+                    navigator.vibrate([200, 100, 200, 100, 200]);
+                }
                 resultDiv.innerHTML = '<span class="error">无法读取该卡片，可能非标准 NDEF 格式或移开太快。</span>';
             });
 
