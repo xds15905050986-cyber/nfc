@@ -147,14 +147,13 @@
         }
     });
 
-    // 复制全部按钮[cite: 1]
+    // 复制全部按钮：仅提取 UID，每行一个，无前缀
     copyAllBtn.addEventListener('click', () => {
         if (historyData.length === 0) {
             alert('暂无记录可复制');
             return;
         }
-        // 已修复 \\n 为 \n 换行符
-        let allText = historyData.map(h => `[${h.time}] UID: ${h.uid}`).join('\n');
+        let allText = historyData.map(h => h.uid).join('\n');
         copyText(allText);
     });
 
