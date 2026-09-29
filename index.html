@@ -24,8 +24,6 @@
             background-color: #fff3cd !important;
             border-color: #ffeeba !important;
             color: #856404;
-            font-weight: bold;
-            font-size: 15px;
         }
         
         .setting-group { margin: 15px 0; text-align: left; }
@@ -48,7 +46,7 @@
 <body>
 
 <div class="card">
-    <h2>NFC 芯片 ID 读取器V1.0.2</h2>
+    <h2>NFC 芯片 ID 读取器V1.0.3</h2>
     <p>点击按钮后，将 NFC 卡片贴近手机背面顶部。</p>
     
     <div class="setting-group">
@@ -93,34 +91,40 @@
     let abortController = null;
     let isScanning = false;
 
-    // 扫码间隔（防抖时间）设置为 2 秒
+    // 扫码间隔（防抖时间）修改为 1 秒
     let lastUid = '';
     let lastReadTime = 0;
-    const DEBOUNCE_TIME = 2000; 
+    const DEBOUNCE_TIME = 1000; 
     let countdownTimer = null; // 倒计时定时器
 
-    // 启动冷却倒计时函数（精确到小数点后1位）
-    function startCooldown(durationMs) {
+    // 统一处理并显示带倒计时的结果
+    function showResultWithCountdown(mainHtml, durationMs, isAlert = false) {
         if (countdownTimer) {
             clearInterval(countdownTimer);
         }
         
         let remaining = durationMs;
-        resultDiv.className = "cooldown-alert";
+        let s = (remaining / 1000).toFixed(1);
         
-        let sec = (remaining / 1000).toFixed(1);
-        resultDiv.innerHTML = `⏳ <strong>冷却中（请稍候）</strong><br>剩余冷却时间：<strong>${sec}</strong> 秒`;
+        resultDiv.className = isAlert ? "cooldown-alert" : "";
+        resultDiv.innerHTML = `${mainHtml}<br><span id="countdownTip" style="color:${isAlert ? '#856404' : '#e6a23c'}; font-size:13px; font-weight:bold;">⏳ 冷却中: ${s} 秒</span>`;
 
         countdownTimer = setInterval(() => {
             remaining -= 100; // 每100毫秒更新一次
             if (remaining <= 0) {
                 clearInterval(countdownTimer);
                 countdownTimer = null;
-                resultDiv.className = "";
-                resultDiv.innerHTML = "已就绪，请刷卡...";
+                const tip = document.getElementById('countdownTip');
+                if (tip) {
+                    tip.textContent = "✅ 已就绪，可继续刷卡";
+                    tip.style.color = "#28a745";
+                }
             } else {
-                let s = (remaining / 1000).toFixed(1);
-                resultDiv.innerHTML = `⏳ <strong>冷却中（请稍候）</strong><br>剩余冷却时间：<strong>${s}</strong> 秒`;
+                let currentSec = (remaining / 1000).toFixed(1);
+                const tip = document.getElementById('countdownTip');
+                if (tip) {
+                    tip.textContent = `⏳ 冷却中: ${currentSec} 秒`;
+                }
             }
         }, 100);
     }
@@ -242,32 +246,29 @@
                 const mode = readModeSelect.value;
                 const timeSinceLastRead = nowTimestamp - lastReadTime;
 
-                // 2 秒防抖/冷却检查
+                // 1 秒防抖/冷却检查（若在 1 秒内重复刷卡）
                 if (timeSinceLastRead < DEBOUNCE_TIME) {
                     if ("vibrate" in navigator) {
                         navigator.vibrate([200, 100, 200, 100, 200]);
                     }
-                    // 刷新倒计时
-                    startCooldown(DEBOUNCE_TIME - timeSinceLastRead);
+                    showResultWithCountdown(`⚠️ <strong>刷卡太快！</strong>`, DEBOUNCE_TIME - timeSinceLastRead, true);
                     return; 
                 }
 
                 lastUid = uid;
                 lastReadTime = nowTimestamp;
-                resultDiv.className = "";
 
                 // 检查卡片是否已经读取过
                 const existingIndex = historyData.findIndex(item => item.uid === uid);
                 
+                let mainContent = "";
                 if (existingIndex !== -1) {
                     if ("vibrate" in navigator) {
                         navigator.vibrate([200, 100, 200, 100, 200]);
                     }
-                    resultDiv.innerHTML = `<span class="warning">该卡片已读取过！</span><br><strong>UID:</strong> <code>${uid}</code>`;
+                    mainContent = `<span class="warning">该卡片已读取过！</span><br><strong>UID:</strong> <code>${uid}</code>`;
                 } else {
-                    let html = `<span class="success">读取成功！</span><br>`;
-                    html += `<strong>芯片 ID (UID):</strong> <code>${uid}</code>`;
-                    resultDiv.innerHTML = html;
+                    mainContent = `<span class="success">读取成功！</span><br><strong>芯片 ID (UID):</strong> <code>${uid}</code>`;
 
                     historyData.unshift({ time: now, uid: uid });
                     if (historyData.length > 50) historyData.pop(); // 最多保存最近 50 条[cite: 1]
@@ -275,8 +276,8 @@
                     renderHistory();
                 }
 
-                // 每次正常或重复读卡后，自动启动 2 秒冷却倒计时
-                startCooldown(DEBOUNCE_TIME);
+                // 显示读取结果并同时启动 1 秒冷却倒计时
+                showResultWithCountdown(mainContent, DEBOUNCE_TIME, false);
 
                 // 如果是单次读卡模式，处理完毕后自动停止扫描
                 if (mode === 'single') {
@@ -289,8 +290,8 @@
                 if ("vibrate" in navigator) {
                     navigator.vibrate([200, 100, 200, 100, 200]);
                 }
-                resultDiv.className = "";
-                resultDiv.innerHTML = '<span class="error">无法读取该卡片，可能非标准 NDEF 格式或移开太快。</span>';
+                let errorContent = '<span class="error">无法读取该卡片，可能非标准 NDEF 格式或移开太快。</span>';
+                showResultWithCountdown(errorContent, DEBOUNCE_TIME, false);
             });
 
         } catch (error) {
